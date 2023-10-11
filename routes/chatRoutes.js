@@ -4,6 +4,8 @@ const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
 const chatController = require('../controllers/chatController');
 
+// Create a new route to list all users
+router.get('/users', authMiddleware, chatController.listAllUsers);
 // Create a new chat room
 router.post('/create-room', authMiddleware, chatController.createRoom);
 

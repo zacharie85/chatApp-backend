@@ -3,12 +3,42 @@ const Message = require('../models/message');
 const ChatRoom = require('../models/chatRoom');
 const User = require('../models/user');
 
+exports.listAllUsers = async (req, res) => {
+  try {
+    // Fetch all users in the database
+    const users = await User.find({}, 'username _id');
+
+    res.status(200).json(users);
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
 exports.getAllRooms = async (req, res) => {
   try {
-    const chatRooms = await ChatRoom.find();
-    res.status(200).json(chatRooms);
+    const userId = req.userId;
+
+    // Fetch all chat rooms for the user
+    const chatRooms = await ChatRoom.find({ members: userId }).populate('members', 'username');
+
+    // Create an array to hold the chat rooms with lastMessage and messageTime
+    const roomsWithLastMessage = [];
+
+    for (const room of chatRooms) {
+      // Find the last message in the chat room
+      const lastMessage = await Message.findOne({ chatId: room._id }).sort({ createdAt: -1 }).exec();
+
+      roomsWithLastMessage.push({
+        chatRoom: room,
+        lastMessage: lastMessage ? lastMessage.text : null,
+        messageTime: lastMessage ? lastMessage.createdAt : null,
+      });
+    }
+
+    res.status(200).json(roomsWithLastMessage);
   } catch (error) {
-    console.error('Error getting chat rooms:', error);
+    console.error('Error fetching chat rooms:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -80,25 +110,42 @@ exports.createRoom = async (req, res) => {
 
 exports.sendMessage = async (req, res) => {
   try {
-    const { chatId, text } = req.body;
+    const { chatId, text, receiverId } = req.body; // Add receiverId to the request body
     const sender = req.userId;
 
+    // Check if the chat room with the given chatId exists
+    let chatRoom = await ChatRoom.findById(chatId);
+
+    if (!chatRoom) {
+      // Get the receiver's name based on their user ID
+      const receiver = await User.findById(receiverId);
+
+      if (!receiver) {
+        return res.status(400).json({ error: 'Receiver not found' });
+      }
+
+      // Create a new chat room with the receiver's name
+      chatRoom = new ChatRoom({
+        name: receiver.username, // Set the chat room name to the receiver's username
+        members: [sender, receiverId], // Add sender and receiver as initial members
+      });
+
+      await chatRoom.save();
+    }
+
+    // Create a new message
     const newMessage = new Message({
       sender,
-      chatId,
+      chatId: chatRoom._id, // Use the chat room's _id
       text,
     });
 
     await newMessage.save();
-    res.status(201).json({ message: 'Message sent successfully' });
 
-    const chatRoom = await ChatRoom.findById(chatId);
-    if (chatRoom) {
-      const members = chatRoom.members;
-      members.forEach((member) => {
-        req.io.to(member).emit('message', newMessage);
-      });
-    }
+    // Emit the message to all members of the chat room
+    req.io.to(chatRoom._id).emit('message', newMessage);
+
+    res.status(201).json({ message: 'Message sent successfully' });
   } catch (error) {
     console.error('Error sending message:', error);
     res.status(500).json({ error: 'Internal server error' });
