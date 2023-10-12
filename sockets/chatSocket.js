@@ -1,5 +1,6 @@
 // sockets/chatSocket.js
 const User = require('../models/user');
+const Message = require('../models/message');
 const onlineUsers = {};
 module.exports = (io, db) => {
     const chatSocket = io.on('connection', (socket) => {
@@ -15,27 +16,32 @@ module.exports = (io, db) => {
                 // Emit the updated online users list to all connected clients
                 io.emit('online-users', Object.values(onlineUsers));
             }
-            User.findByIdAndUpdate(socket.userId, { online: false }, { new: true }, (err, user) => {
-                if (err) {
+
+            User.findByIdAndUpdate(socket.userId, { online: false }, { new: true })
+                .catch((err) => {
                     console.error('Error updating online status:', err);
-                }
-            });
+                });
         });
 
         socket.on('join-room', (chatId, userId) => {
+            console.log('----- ',socket.id,' joining room ',chatId);
             socket.join(chatId);
             // Update the user's online status to true in the database
             // Add the user to the onlineUsers object with their socket.id as the key
             onlineUsers[socket.id] = { userId, chatId };
             // Emit the updated online users list to all connected clients
+            // Add event listener to broadcast messages to the chat room
+
             io.emit('online-users', Object.values(onlineUsers));
-            User.findByIdAndUpdate(userId, { online: true }, { new: true }, (err, user) => {
-                if (err) {
-                    console.error('Error updating online status:', err);
-                } else {
+
+            User.findByIdAndUpdate(userId, { online: true }, { new: true })
+                .then((doc) => {
                     socket.userId = userId;
-                }
-            });
+                })
+                .catch((err) => {
+                    console.error('Error updating online status:', err);
+                });
+
         });
 
         // Add a listener for user login

@@ -1,7 +1,6 @@
 // server.js
 const express = require('express');
 const http = require('http');
-const socketIo = require('socket.io');
 const { Server } = require("socket.io");
 const mongoose = require('mongoose');
 require('dotenv/config');
@@ -30,8 +29,10 @@ app.options('*', cors());
 const chatSocket = require('./sockets/chatSocket')(io, db);
 // Middleware
 app.use(express.json());
-
-// Routes
+app.use((req, res, next) => {
+    req.io = io; // Make io accessible in your route handlers
+    next();
+});
 const authRoutes = require('./routes/authRoutes');
 const chatRoutes = require('./routes/chatRoutes');
 
